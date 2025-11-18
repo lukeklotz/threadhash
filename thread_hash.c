@@ -23,11 +23,11 @@ static char ** hash_arr = NULL;
 
 static int pass_count;
 static int hash_count;
+static int num_threads = 1;
 
 static bool input = false;   //-i
 static bool output = false;  //-o
 static bool dict = false;    //-d
-static bool threads = false; //-t
 static bool verbose = false; //-v
 static bool help = false;    //-h
 static bool nice_mode = false;    //-n
@@ -36,20 +36,19 @@ static bool nice_mode = false;    //-n
 //definitions
 char ** getPasswds(FILE *fd);
 char ** getHashes(FILE *fp);
-void crack(char * passwd, char * hash_string);
+bool crack(char*, char*);
 void free_passwd_arr(void);
 void free_hash_arr(void);
+int get_next_index(void);
+void * loop_hashes(void*);
 
 //structs
-/*
-static struct hash {
-	hash_algorithm_t algo;
-	char * salt;
+typedef struct{
+	char * passwd;
 	char * hash_string;
-}
-*/
+} hash_pass_struct_t;
 
-//hash * hashes = NULL;
+static hash_pass_struct_t st;
 
 int main(int argc, char * argv[]){
 	
@@ -81,7 +80,7 @@ int main(int argc, char * argv[]){
 					dict_file = optarg;
 					break;
 				case 't':
-					threads = true;
+					num_threads = atoi(optarg);
 					break;
 				case 'v':
 					verbose = true;
@@ -117,6 +116,25 @@ int main(int argc, char * argv[]){
 		hash_arr = getHashes(fp);
 	}
 
+	//non multi threaded crack
+	if(dict && input) {
+		//loop hashes	
+		pthread_t *threads = NULL;			
+		long tid = 0;
+		long n = 0;
+
+		threads = malloc(num_threads * sizeof(pthread_t));
+
+		for(tid = 0; tid < num_threads; tid++){
+			pthread_create(&threads[tid], NULL, loop_hashes, (void *) n);	
+		}
+		for(tid = 0; tid < num_threads; tid++){
+			pthread_join(threads[tid], NULL);
+		}
+		
+	}
+	
+	//free memory
 	if(passwd_arr != NULL){
 		free_passwd_arr();
 	}
@@ -127,6 +145,35 @@ int main(int argc, char * argv[]){
 	exit(EXIT_SUCCESS);
 }
 //func defs begin
+int get_next_index(void){
+	static int next_hash = 0;
+	static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;	
+	int cur_hash = 0;
+	
+	pthread_mutex_lock(& lock);
+	cur_hash = next_hash++;
+	pthread_mutex_unlock(& lock);
+
+	return cur_hash;
+}
+
+void * loop_hashes(void*){
+	int i = 0;
+	for(i = get_next_index(); i < hash_count; i = get_next_index()){
+		for(int j = 0; j < pass_count; ++j){
+			st.passwd = passwd_arr[j];
+			st.hash_string = hash_arr[i]; 
+			if(crack(st.passwd, st.hash_string) == true){
+				printf("cracked  %s  %s\n", passwd_arr[j], hash_arr[i]);
+				break;
+			}
+			else if ((j == pass_count - 1) && (crack(st.passwd, st.hash_string) == false)){
+				printf("**** failed to crack  %s\n", hash_arr[i]);
+			}
+		}
+	}
+	pthread_exit(EXIT_SUCCESS);
+}
 
 void free_passwd_arr(void){
 	for(int i = 0; i < pass_count; i++){
@@ -197,16 +244,14 @@ char ** getHashes(FILE *fp){
 	return hash_arr;
 }
 
-void crack(char * passwd, char * hash_string){
+bool crack(char *pass, char* hash){
 	struct crypt_data data;
 	char * res = NULL;
 	data.initialized = 0;
 
-	res = crypt_r(passwd, hash_string, &data);
-	if(res && strcmp(res, hash_string) == 0){
-		printf("SUCCESS: cracked < %s > using hash < %s >\n", passwd, hash_string);
-		;
-	} else {
-		printf("FAIL: password < %s > using hash < %s > \n", passwd, hash_string);	
-	}
+	res = crypt_r(pass, hash, &data);
+	if(res && strcmp(res, hash) == 0) {
+		return true;
+	}	
+	return false;	
 }
