@@ -150,6 +150,10 @@ int main(int argc, char * argv[]){
 		}
 
 		passwd_arr = getPasswds(fp);
+		
+		if(dict_file != NULL){
+			fclose(fp);
+		}
 	} else {
 		fprintf(stderr, "must give name for dictionary input file with -d filename\n");	
 		exit(EXIT_FAILURE);
@@ -161,6 +165,10 @@ int main(int argc, char * argv[]){
 		}	
 		
 		hash_arr = getHashes(fp);
+		
+		if(input_file != NULL){
+			fclose(fp);
+		}
 	} else {
 		fprintf(stderr, "must give name for hashed password input file with -t filename\n");	
 		exit(EXIT_FAILURE);	
